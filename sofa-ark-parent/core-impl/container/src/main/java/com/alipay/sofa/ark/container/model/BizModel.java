@@ -16,6 +16,8 @@
  */
 package com.alipay.sofa.ark.container.model;
 
+import com.alipay.sofa.ark.api.ArkClient;
+import com.alipay.sofa.ark.api.ArkConfigs;
 import com.alipay.sofa.ark.bootstrap.MainMethodRunner;
 import com.alipay.sofa.ark.common.util.AssertUtils;
 import com.alipay.sofa.ark.common.util.BizIdentityUtils;
@@ -265,10 +267,17 @@ public class BizModel implements Biz {
         try {
             eventAdminService.sendEvent(new BeforeBizStartupEvent(this));
             resetProperties();
-            MainMethodRunner mainMethodRunner = new MainMethodRunner(mainClass, args);
-            mainMethodRunner.run();
-            // this can trigger health checker handler
-            eventAdminService.sendEvent(new AfterBizStartupEvent(this));
+            if (this == ArkClient.getMasterBiz() && ArkConfigs.isEmbedEnable()) {
+            } else {
+                long start = System.currentTimeMillis();
+                MainMethodRunner mainMethodRunner = new MainMethodRunner(mainClass, args);
+                mainMethodRunner.run();
+                // this can trigger health checker handler
+                eventAdminService.sendEvent(new AfterBizStartupEvent(this));
+                System.out.println("Ark biz [" + getIdentity() + "] started in  "
+                                   + (System.currentTimeMillis() - start) + " ms");
+            }
+
         } catch (Throwable e) {
             bizState = BizState.BROKEN;
             throw e;
@@ -277,10 +286,21 @@ public class BizModel implements Biz {
         }
         BizManagerService bizManagerService = ArkServiceContainerHolder.getContainer().getService(
             BizManagerService.class);
-        if (bizManagerService.getActiveBiz(bizName) == null) {
-            bizState = BizState.ACTIVATED;
+
+        if (Boolean.valueOf(System.getProperty("activate.new.module"))) {
+            Biz currentActiveBiz = bizManagerService.getActiveBiz(bizName);
+            if (currentActiveBiz == null) {
+                bizState = BizState.ACTIVATED;
+            } else {
+                ((BizModel) currentActiveBiz).setBizState(BizState.DEACTIVATED);
+                bizState = BizState.ACTIVATED;
+            }
         } else {
-            bizState = BizState.DEACTIVATED;
+            if (bizManagerService.getActiveBiz(bizName) == null) {
+                bizState = BizState.ACTIVATED;
+            } else {
+                bizState = BizState.DEACTIVATED;
+            }
         }
     }
 
@@ -289,6 +309,10 @@ public class BizModel implements Biz {
         AssertUtils.isTrue(bizState == BizState.ACTIVATED || bizState == BizState.DEACTIVATED
                            || bizState == BizState.BROKEN,
             "BizState must be ACTIVATED, DEACTIVATED or BROKEN.");
+        if (this == ArkClient.getMasterBiz() && ArkConfigs.isEmbedEnable()) {
+            // skip stop when embed mode
+            return;
+        }
         ClassLoader oldClassLoader = ClassLoaderUtils.pushContextClassLoader(this.classLoader);
         bizState = BizState.DEACTIVATED;
         EventAdminService eventAdminService = ArkServiceContainerHolder.getContainer().getService(
@@ -346,6 +370,9 @@ public class BizModel implements Biz {
 
     private void resetProperties() {
         System.getProperties().remove("logging.path");
+        if (ArkConfigs.isEmbedEnable() && this != ArkClient.getMasterBiz()) {
+            System.getProperties().remove("spring.application.admin.enabled");
+        }
     }
 
     public File getBizTempWorkDir() {

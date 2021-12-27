@@ -58,6 +58,11 @@ public class BizClassLoader extends AbstractClasspathClassLoader {
         this.bizIdentity = bizIdentity;
     }
 
+    public BizClassLoader(String bizIdentity, URL[] urls ,boolean exploded) {
+        this(bizIdentity,urls);
+        this.exploded = exploded;
+    }
+
     @Override
     protected Class<?> loadClassInternal(String name, boolean resolve) throws ArkLoaderException {
         Class<?> clazz = null;
@@ -139,16 +144,19 @@ public class BizClassLoader extends AbstractClasspathClassLoader {
                     bizClassLoaderHook = ArkServiceLoader.loadExtensionFromArkBiz(
                         ClassLoaderHook.class, BIZ_CLASS_LOADER_HOOK, bizIdentity);
                     Biz masterBiz = ArkClient.getMasterBiz();
-                    if (bizClassLoaderHook == null && masterBiz != null && !masterBiz.getIdentity().equals(bizIdentity)) {
+                    if (bizClassLoaderHook == null && masterBiz != null
+                        && !masterBiz.getIdentity().equals(bizIdentity)) {
                         ClassLoader masterClassLoader = masterBiz.getBizClassLoader();
-                        String defaultBizClassloaderHook = System.getProperty(BIZ_CLASS_LOADER_HOOK_DIR);
+                        String defaultBizClassloaderHook = System
+                            .getProperty(BIZ_CLASS_LOADER_HOOK_DIR);
                         if (!StringUtils.isEmpty(defaultBizClassloaderHook)) {
                             try {
                                 bizClassLoaderHook = (ClassLoaderHook<Biz>) masterClassLoader
-                                        .loadClass(defaultBizClassloaderHook).newInstance();
+                                    .loadClass(defaultBizClassloaderHook).newInstance();
                             } catch (Exception e) {
                                 throw new RuntimeException(String.format(
-                                        "can not find master classloader hook: %s", defaultBizClassloaderHook), e);
+                                    "can not find master classloader hook: %s",
+                                    defaultBizClassloaderHook), e);
                             }
                         }
                     }
